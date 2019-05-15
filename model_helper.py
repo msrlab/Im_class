@@ -48,7 +48,8 @@ def setup_model(mp):
         
     # attach labels to model
     model.class_to_idx = mp.class_to_idx
-    
+    idx_to_class = {val: key for key, val in model.class_to_idx.items()}
+    model.idx_to_class = idx_to_class
     #freeze parameters
     for param in model.parameters():
         param.requires_grad = False  

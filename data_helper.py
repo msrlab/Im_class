@@ -48,7 +48,7 @@ def make_dataloader(data_dir):
 
 
 ######## load label mapping
-def load_labels():
-    with open('cat_to_name.json', 'r') as f:
+def load_labels(cat_names_file):
+    with open(cat_names_file, 'r') as f:
         cat_to_name = json.load(f)
     return cat_to_name

@@ -110,8 +110,7 @@ else:  #autodetect
     
 #construct dataloader
 dataloader, class_to_idx = make_dataloader(data_dir)    
-#get category-to-label mapping
-cat_to_name = load_labels()
+
 
 ### setup model
 nr_out_features = len(cat_to_name)
