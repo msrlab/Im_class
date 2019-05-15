@@ -75,7 +75,10 @@ def load_checkpoint(model, optimizer, filename, device):
     else:
         checkpoint = torch.load(filename)
     model.load_state_dict(checkpoint['model_state_dict'])
-    model.parameters =  checkpoint['parameters']
+    try: 
+        model.parameters =  checkpoint['parameters']
+    except:
+        pass
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     train_log = checkpoint['train_log']
     return model, optimizer, train_log  
@@ -164,18 +167,24 @@ def train(dataloader, model_str, device, model, optimizer, criterion, epochs, ev
 
     #load checkpoint to continue training
     if os.path.isfile(f"{save_dir}/{model_str}_last_epoch.pth"):
-        model, optimizer, log = load_checkpoint(model, optimizer, f"{save_dir}/{model_str}_last_epoch.pth", device)
-        resume_epoch = log.epoch
-        print(f"Checkpoint detected: Resuming from {save_dir}/{model_str}_last_epoch.pth")
-        print_loss_metrics(log.epoch, epochs, 0, log.val_acc[log.epoch - 1], log.val_loss[log.epoch - 1], log.train_loss[log.epoch - 1], 0)
-        if resume_epoch == epochs:
-            print(f"training on {epochs} epochs is already finished, increase nr of epochs if you want to continue training")
-        elif resume_epoch > epochs:
-            print(f"more than {epochs} already trained, increase nr of epochs if you want to continue training")
+        if not(resume):
+            print(f"caution! {save_dir}/{model_str}_last_epoch.pth will be overwritten")                
         else:
-            print("Continuing...")
+            model, optimizer, log = load_checkpoint(model, optimizer, f"{save_dir}/{model_str}_last_epoch.pth", device)
+            resume_epoch = log.epoch
+            print(f"Checkpoint detected: Resuming from {save_dir}/{model_str}_last_epoch.pth")
+            print_loss_metrics(log.epoch, epochs, 0, log.val_acc[log.epoch - 1], log.val_loss[log.epoch - 1], log.train_loss[log.epoch - 1], 0)
+            if resume_epoch == epochs:
+                print(f"training on {epochs} epochs is already finished, increase nr of epochs if you want to continue training")
+            elif resume_epoch > epochs:
+                print(f"more than {epochs} already trained, increase nr of epochs if you want to continue training")
+            else:
+                print("Continuing...")
     else:
-        print("no checkpoint detected, starting from scratch....")
+        print("no checkpoint detected, starting from scratch....")                  
+
+                          
+                          
     for epoch in range(resume_epoch, epochs):
         start_time_e = time.time()
         loss_running = 0

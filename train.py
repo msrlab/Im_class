@@ -15,7 +15,7 @@ from workspace_utils import active_session
 import numpy as np
 from IPython.display import display
 from model_helper import construct_nn_Seq, setup_model, save_checkpoint, load_checkpoint, train_logger, calc_val_metrics, print_loss_metrics, train, model_setup_parms
-from proc_helper import process_image
+from image_helper import process_image
 from data_helper import load_labels, make_dataloader 
 import argparse
 
@@ -24,12 +24,12 @@ import argparse
 #defaults for command line arguments
 def_epochs = 30
 def_save_dir = '.'
-def_hidden_units = [512]
+def_hidden_units = [512, 256]
 def_dropout = [0.2]
 def_learning_rate = 0.0001
 def_arch = 'densenet121'
 
-resume = True #True to resume from saved checkpoint !!!caution: if set to False, existing file will be overwritten!
+#resume = True #True to resume from saved checkpoint !!!caution: if set to False, existing file will be overwritten!
 
 eval_every_x_batch = 1000    #can be used for testing in slow CPU mode, set to high values if not needed
 eval_every_x_epoch = 1
@@ -45,7 +45,7 @@ parser.add_argument('--save_dir', action='store',
 parser.add_argument('--arch', action='store',
                     dest='arch', default=def_arch,
                     help='choose architecture of pretrained network. available options: vgg19, densenet212. take a look at setup_model() to implement more')
-parser.add_argument('--learning_rate', action='store',
+parser.add_argument('--learning_rate', action='store', type = float,
                     dest='learning_rate', default=def_learning_rate,
                     help='give learning rate for training')
 parser.add_argument('--epochs', action='store', type=int,
@@ -86,6 +86,7 @@ learning_rate = args.learning_rate
 printmodel = args.printmodel
 set_cpu = args.set_cpu
 set_gpu = args.set_gpu
+resume = not(args.noresume)
 
 ## if only one dropout value but multiple layers in hidden_units, construct p_dropout list with same value
 if (len(dropout) == 1):
@@ -110,7 +111,8 @@ else:  #autodetect
     
 #construct dataloader
 dataloader, class_to_idx = make_dataloader(data_dir)    
-
+# todo find different solution using number directly from class_to_idx
+cat_to_name = load_labels('cat_to_name.json')
 
 ### setup model
 nr_out_features = len(cat_to_name)
@@ -159,4 +161,4 @@ print(f"Accuracy:{test_accuracy:.3f}")
 pypl.plot(log.val_loss, label='Validation Loss')
 pypl.plot(log.train_loss, label='Train Loss')
 pypl.legend()
-pypl.savefig(save_dir+'/Loss')
+pypl.savefig(save_dir+'/Loss'+model_str)

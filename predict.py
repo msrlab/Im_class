@@ -93,7 +93,7 @@ else:  #autodetect
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     print(f"device autodetected as {device.type}")
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+#device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 #checkpoint = 'densenet121_last_epoch.pth'
 #filename = 'probe.jpg'
 fl_model, log = load_checkpoint_reconstruct(checkpoint, device)
