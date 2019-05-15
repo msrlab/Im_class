@@ -12,7 +12,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as pypl
 import msr_helper as helper
 from workspace_utils import active_session
-from PIL import Image
 import numpy as np
 from IPython.display import display
 from model_helper import construct_nn_Seq, setup_model, save_checkpoint, load_checkpoint, train_logger, calc_val_metrics, print_loss_metrics, train, model_setup_parms

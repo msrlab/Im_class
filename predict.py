@@ -1,3 +1,7 @@
+import torch
+from model_helper import load_checkpoint_reconstruct
+from image_helper import process_image
+import argparse
 #predict from input image
 
 def predict(image_path, model, topk=5):
@@ -33,9 +37,54 @@ def predict2(in_im, model, topk=5):
     return top_prob.cpu().detach().numpy()[0], top_class.cpu().detach().numpy()[0]
     # TODO: Implement the code to predict the class from an image file   
    
-### load the checkpoint
-model, optimizer, log = load_checkpoint(model, optimizer, f"{save_dir}/{model_str}_last_epoch.pth", device)
+parser = argparse.ArgumentParser()
+parser.add_argument('path_to_image', action='store',
+                    help='image to be classified')
+parser.add_argument('checkpoint', action='store',
+                    help='checkpoint of trained model')
+parser.add_argument('--top_k', action='store', type=int,
+                    dest='top_k', default=5,
+                    help='output of top k classes')
+parser.add_argument('--gpu', action='store_true',
+                    default=False,
+                    dest='set_gpu',
+                    help='switch to set gpu mode explicitely. default is autodetect')
+parser.add_argument('--cpu', action='store_true',
+                    default=False,
+                    dest='set_cpu',
+                    help='switch to set cpu mode explicitely. default is autodetect')
+parser.add_argument('--printmodel', action='store_true',
+                    default=False,
+                    dest='printmodel',
+                    help='for debugging: print model architecture to console')
 
+args = parser.parse_args()
+image = args.path_to_image
+checkpoint = args.checkpoint
+top_k = args.top_k
+printmodel = args.printmodel
+set_cpu = args.set_cpu
+set_gpu = args.set_gpu
+### load the checkpoint
+
+if set_gpu:
+    device = torch.device('cuda:0')
+    print("Device manually set to cuda")
+elif set_cpu:
+    device = torch.device('cpu')
+    print("Device manually set to cpu")
+else:  #autodetect
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    print(f"device autodetected as {device.type}")
+
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+#checkpoint = 'densenet121_last_epoch.pth'
+#filename = 'probe.jpg'
+fl_model, log = load_checkpoint_reconstruct(checkpoint, device)
+fl_model.to(device)
+if printmodel:
+    print(fl_model)
+    
 ##### needs to be adapted, move to seperate file with functions for label handling?
 idx_to_class = {val: key for key, val in fl_model.class_to_idx.items()} #this line adapted from the Udacity Knowledge base
 def idx_to_name (idx):
@@ -47,7 +96,7 @@ def idx_to_name (idx):
 #filename='Flower_example4.jpg'
 #fig, axs = pypl.subplots(nrows=2, ncols=1)
 #im = process_image(filename)
-t_prob, t_class = predict(filename,fl_model,5)
+t_prob, t_class = predict(image,fl_model,top_k)
 print(t_prob)
 print(t_class)
 #imshow(im, ax = axs[0])

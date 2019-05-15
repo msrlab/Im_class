@@ -79,6 +79,21 @@ def load_checkpoint(model, optimizer, filename, device):
     train_log = checkpoint['train_log']
     return model, optimizer, train_log  
 
+### ToDO comibne both methods to be more generic
+def load_checkpoint_reconstruct(filename, device):
+    if device.type == 'cpu':
+        checkpoint = torch.load(filename, map_location='cpu')
+    else:
+        checkpoint = torch.load(filename)
+    mp = checkpoint['parameters']    
+    model = setup_model(mp)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.parameters = mp
+    #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    train_log = checkpoint['train_log']
+    #return model, optimizer, train_log  
+    return model,  train_log
+
 #structure for collecting training stats and saving
 class train_logger:
     def __init__(self):
