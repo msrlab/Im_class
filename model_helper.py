@@ -1,6 +1,12 @@
 # functions to setup the model
-
-
+import torch
+from torchvision import datasets, transforms, models
+from torch import nn
+from torch import optim
+import torch.nn.functional as F
+from collections import OrderedDict
+import time
+#import json
 
 
 def construct_nn_Seq (nr_in_features, hl_nodes, nr_out_features, out_function, p_dropout):
@@ -27,8 +33,7 @@ def construct_nn_Seq (nr_in_features, hl_nodes, nr_out_features, out_function, p
     classifier = nn.Sequential(d)
     return classifier
 
-def setup_model(model_family, hl_nodes, p_dropout, nr_out_features, out_function):
-  
+def setup_model(model_family, hl_nodes, p_dropout, nr_out_features, out_function, class_to_idx):
     #load pretrained model & get required number of input features
     if model_family == 'vgg16':  
         model = models.vgg16(pretrained=True)
@@ -41,7 +46,7 @@ def setup_model(model_family, hl_nodes, p_dropout, nr_out_features, out_function
         nr_in_features = model.classifier.in_features
         
     # attach labels to model
-    model.class_to_idx = image_dataset['train'].class_to_idx
+    model.class_to_idx = class_to_idx
     
     #freeze parameters
     for param in model.parameters():
@@ -61,7 +66,7 @@ def save_checkpoint(model, optimizer, filename, train_logger):
                  'train_log': train_logger}
     torch.save(checkpoint, filename)
     
-def load_checkpoint(model, optimizer, filename):
+def load_checkpoint(model, optimizer, filename, device):
     if device.type == 'cpu':
         checkpoint = torch.load(filename, map_location='cpu')
     else:
@@ -70,7 +75,7 @@ def load_checkpoint(model, optimizer, filename):
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     train_log = checkpoint['train_log']
     return model, optimizer, train_log  
-        
+      
 class train_logger:
     def __init__(self):
         self.val_acc = []
@@ -81,7 +86,7 @@ class train_logger:
 
 ###### functions to calculate and print metrics
 
-def calc_val_metrics (fl_model, dataloader_valid):
+def calc_val_metrics (device, fl_model, dataloader_valid, criterion):
     start_time_eval = time.time()
     fl_model.eval()
     val_loss = 0
@@ -104,7 +109,9 @@ def calc_val_metrics (fl_model, dataloader_valid):
     fl_model.train()
     return val_time, val_loss, val_accuracy
 
-def print_loss_metrics(epoch, batch, val_accuracy, val_loss, train_loss, time):  
+
+##todo make more generic, just give a dictionary to print out arbitrary information
+def print_loss_metrics(epoch, epochs, batch, val_accuracy, val_loss, train_loss, time):  
     print(f"Epoch {epoch}/{epochs} | "
           #f"Batch {ii} batch_time:{batch_time:.3f}s | "
           #f"val time {val_time:.3f} | "
@@ -113,18 +120,24 @@ def print_loss_metrics(epoch, batch, val_accuracy, val_loss, train_loss, time):
           f"train loss {train_loss:.3f} | "
           f"time {time:.3f} | ")
 
-def train(model, optimizer, criterion, epochs, eval_every_x_batch, eval_every_x_epoch, save_every_x_evalepoch, resume):    
+    
+def train(dataloader, model_str, device, model, optimizer, criterion, epochs, eval_every_x_batch, eval_every_x_epoch, save_every_x_evalepoch, resume):    
     # initialize
+    print("Starting training...")
+    if device.type == 'cpu':
+        print("Warning: training in CPU mode may take a veeeeeeeeeeeeeery long time.")
+    if device.type == 'cuda':
+        print("GPU mode enabled")     
     model.to(device)
     log = train_logger()
     resume_epoch = 0
 
     #load checkpoint to continue training
     if resume:
-        model, optimizer, log = load_checkpoint(model, optimizer, f"{model_str}_last_epoch.pth")
+        model, optimizer, log = load_checkpoint(model, optimizer, f"{model_str}_last_epoch.pth", device)
         resume_epoch = log.epoch
         print(f"Resuming from saved checkpoint")
-        print_loss_metrics(log.epoch, 0, log.val_acc[log.epoch - 1], log.val_loss[log.epoch - 1], log.train_loss[log.epoch - 1], 0)
+        print_loss_metrics(log.epoch, epochs, 0, log.val_acc[log.epoch - 1], log.val_loss[log.epoch - 1], log.train_loss[log.epoch - 1], 0)
         if resume_epoch == epochs:
             print(f"training on {epochs} epochs is already finished, increase nr of epochs if you want to continue training")
         else:
@@ -145,20 +158,20 @@ def train(model, optimizer, criterion, epochs, eval_every_x_batch, eval_every_x_
             #print(f"Batch {ii} batch_time:{batch_time:.3f}s "
             #      f"train loss {loss:.3f}")
             if (ii+1) % eval_every_x_batch == 0:
-                val_time, val_loss, val_accuracy = calc_val_metrics(model, dataloader['valid'])
+                val_time, val_loss, val_accuracy = calc_val_metrics(device, model, dataloader['valid'], criterion)
                 log.val_acc.append(val_accuracy)
                 log.val_loss.append(val_loss)
                 log.train_loss.append(loss_running/(ii+1))
                 log.epoch = epoch + 1
-                print_loss_metrics(epoch, ii+1, val_accuracy, val_loss, loss_running/(ii+1))
+                print_loss_metrics(epoch, epochs, ii+1, val_accuracy, val_loss, loss_running/(ii+1))
         if (epoch+1) % eval_every_x_epoch == 0:  #check validation set and print metrics
             epoch_time = time.time() - start_time_e 
-            val_time, val_loss, val_accuracy = calc_val_metrics(model, dataloader['valid'])
+            val_time, val_loss, val_accuracy = calc_val_metrics(device, model, dataloader['valid'], criterion)
             log.val_acc.append(val_accuracy)
             log.val_loss.append(val_loss)
             log.train_loss.append(loss_running/(ii+1))
             log.epoch = epoch + 1
-            print_loss_metrics(epoch+1, ii+1, val_accuracy, val_loss, loss_running/(ii+1), epoch_time)
+            print_loss_metrics(epoch+1, epochs, ii+1, val_accuracy, val_loss, loss_running/(ii+1), epoch_time)
             if (epoch+1) % save_every_x_evalepoch == 0: #save checkpoint for later resuming
                 save_checkpoint(model, optimizer, f"{model_str}_last_epoch.pth", log)           
                 #later implement additional saving of model with lowest loss  f"{model_str}_epoch{epoch+1:03d}.pth"

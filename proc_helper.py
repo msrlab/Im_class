@@ -1,8 +1,8 @@
 ### helper functions for image processing, visualization etc.
 
 
-%matplotlib inline
-%config InlineBackend.figure_format = 'retina'
+#%matplotlib inline
+#%config InlineBackend.figure_format = 'retina'
 
 def imshow(image, ax=None, title=None):
     """Imshow for Tensor."""
