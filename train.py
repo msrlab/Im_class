@@ -7,7 +7,6 @@ from torch import optim
 import torch.nn.functional as F
 from collections import OrderedDict
 import time
-import json
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as pypl
@@ -18,6 +17,7 @@ import numpy as np
 from IPython.display import display
 from model_helper import construct_nn_Seq, setup_model, save_checkpoint, load_checkpoint, train_logger, calc_val_metrics, print_loss_metrics, train
 from proc_helper import process_image
+from data_helper import load_labels, make_dataloader 
 import argparse
 
 # parameters and settings for training
@@ -28,6 +28,7 @@ def_save_dir = '.'
 def_hidden_units = [512]
 def_dropout = [0.2]
 def_learning_rate = 0.0001
+def_arch = 'densenet121'
 
 resume = True #True to resume from saved checkpoint !!!caution: if set to False, existing file will be overwritten!
 
@@ -43,7 +44,7 @@ parser.add_argument('--save_dir', action='store',
                     dest='save_dir', default=def_save_dir,
                     help='directory where checkpoints and other stuff is saved. default is current directory. also used to resume training.')
 parser.add_argument('--arch', action='store',
-                    dest='arch',
+                    dest='arch', default=def_arch,
                     help='choose architecture of pretrained network. available options: vgg19, densenet212. take a look at setup_model() to implement more')
 parser.add_argument('--learning_rate', action='store',
                     dest='learning_rate', default=def_learning_rate,
@@ -107,64 +108,12 @@ elif set_cpu:
 else:  #autodetect
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     print(f"device autodetected as {device.type}")
+    
+#construct dataloader
+dataloader, class_to_idx = make_dataloader(data_dir)    
+#get category-to-label mapping
+cat_to_name = load_labels()
 
-###### load the data
-#data_dir = 'flowers'
-train_dir = data_dir + '/train'
-valid_dir = data_dir + '/valid'
-test_dir = data_dir + '/test'
-
-###### setting parameters
-par_rot = 45 #max_rotation to apply
-par_imsize = 255  #resize to
-par_crop = 224  #crop to
-par_norm = {'mean': [0.485, 0.456, 0.406],    #normalize RGB values to
-            'std': [0.229, 0.224, 0.225]} 
-par_bsize = 128
-
-# define transforms for training, validation, and testing sets
-data_transforms = {
-                  'train': transforms.Compose([                   
-                     transforms.RandomRotation(par_rot),
-                     transforms.Resize(par_imsize),
-                     transforms.RandomVerticalFlip(),
-                     transforms.RandomHorizontalFlip(),
-                     transforms.RandomResizedCrop(par_crop),
-                     transforms.ToTensor(),
-                     transforms.Normalize(par_norm['mean'],par_norm['std'])]),
-                  'test': transforms.Compose([
-                     transforms.Resize(par_imsize),
-                     transforms.CenterCrop(par_crop),
-                     transforms.ToTensor(),
-                     transforms.Normalize(par_norm['mean'],par_norm['std'])])
-                    }
-data_transforms['valid'] = data_transforms['train']
-
-# Load the datasets with ImageFolder
-print(f"loading the dataset from folder '{data_dir}' ...")
-dsets = ['train','valid','test']
-image_dataset = {x: datasets.ImageFolder(data_dir + '/' + x, data_transforms[x])
-                     for x in dsets}
-
-#  definition of dataloaders
-dataloader = {x: torch.utils.data.DataLoader(image_dataset[x], batch_size = par_bsize, shuffle = True)
-                  for x in dsets}
-dataiter = {x: iter(dataloader[x]) for x in dsets}
-test = next(dataiter['train'])
-class_to_idx = image_dataset['train'].class_to_idx
-#for debugging and checking:  show sample images  (adapted from Udacity pytorch lesson part 7)
-#for x in dsets:
-#    images, labels = next(dataiter[x])
-#    fig, axes = pypl.subplots(figsize=(10,4), ncols=4)
-#    for ii in range(4):
-#        ax = axes[ii]
-#        #######change to a generic imshow method
-#        helper.imshow(images[ii], ax=ax, normalize=True)
-        
-######## load label mapping
-with open('cat_to_name.json', 'r') as f:
-    cat_to_name = json.load(f)
-len(cat_to_name)
 
 ### setup model
 nr_out_features = len(cat_to_name)
