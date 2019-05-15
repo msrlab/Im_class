@@ -34,27 +34,27 @@ def construct_nn_Seq (nr_in_features, hl_nodes, nr_out_features, out_function, p
     classifier = nn.Sequential(d)
     return classifier
 
-def setup_model(model_family, hl_nodes, p_dropout, nr_out_features, out_function, class_to_idx):
+def setup_model(mp):
     #load pretrained model & get required number of input features
-    if model_family == 'vgg16':  
+    if mp.model_family == 'vgg16':  
         model = models.vgg16(pretrained=True)
         nr_in_features = model.classifier[0].in_features
-    if model_family == 'vgg19':  
+    if mp.model_family == 'vgg19':  
         model = models.vgg19(pretrained=True)
         nr_in_features = model.classifier[0].in_features
-    if model_family == 'densenet121':  
+    if mp.model_family == 'densenet121':  
         model = models.densenet121(pretrained=True)
         nr_in_features = model.classifier.in_features
         
     # attach labels to model
-    model.class_to_idx = class_to_idx
+    model.class_to_idx = mp.class_to_idx
     
     #freeze parameters
     for param in model.parameters():
         param.requires_grad = False  
         
     #setup layers in classifier and add to model
-    classifier = construct_nn_Seq (nr_in_features, hl_nodes, nr_out_features, out_function, p_dropout)    
+    classifier = construct_nn_Seq (nr_in_features, mp.hl_nodes, mp.nr_out_features, mp.out_function, mp.p_dropout)    
     model.classifier = classifier
 
     return model
@@ -64,7 +64,8 @@ def setup_model(model_family, hl_nodes, p_dropout, nr_out_features, out_function
 def save_checkpoint(model, optimizer, filename, train_logger):
     checkpoint = {'model_state_dict': model.state_dict(),
                  'optimizer_state_dict': optimizer.state_dict(),
-                 'train_log': train_logger}
+                 'train_log': train_logger,
+                 'parameters': model.parameters}
     torch.save(checkpoint, filename)
     
 def load_checkpoint(model, optimizer, filename, device):
@@ -73,17 +74,29 @@ def load_checkpoint(model, optimizer, filename, device):
     else:
         checkpoint = torch.load(filename)
     model.load_state_dict(checkpoint['model_state_dict'])
+    model.parameters =  checkpoint['parameters']
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     train_log = checkpoint['train_log']
     return model, optimizer, train_log  
-      
+
+#structure for collecting training stats and saving
 class train_logger:
     def __init__(self):
         self.val_acc = []
         self.val_loss = []
         self.train_loss = []
         self.epochs = 0
-        
+   
+#structure for saving model parameters for reconstruction
+class model_setup_parms():
+    def __init__(self):
+        self.model_family = ''
+        self.hl_nodes = []
+        self.p_dropout = []
+        self.nr_out_features = None
+        self.out_function = None
+        self.class_to_idx = None
+                        
 
 ###### functions to calculate and print metrics
 
@@ -126,7 +139,7 @@ def train(dataloader, model_str, device, model, optimizer, criterion, epochs, ev
     # initialize
     print("Starting training...")
     if device.type == 'cpu':
-        print("Warning: training in CPU mode may take a veeeeeeeeeeeeeery long time.")
+        print("Warning: training in CPU mode may take a veeeeeeeeeeeeeeeeeeery long time.")
     if device.type == 'cuda':
         print("GPU mode enabled")     
     model.to(device)

@@ -15,7 +15,7 @@ from workspace_utils import active_session
 from PIL import Image
 import numpy as np
 from IPython.display import display
-from model_helper import construct_nn_Seq, setup_model, save_checkpoint, load_checkpoint, train_logger, calc_val_metrics, print_loss_metrics, train
+from model_helper import construct_nn_Seq, setup_model, save_checkpoint, load_checkpoint, train_logger, calc_val_metrics, print_loss_metrics, train, model_setup_parms
 from proc_helper import process_image
 from data_helper import load_labels, make_dataloader 
 import argparse
@@ -114,12 +114,15 @@ dataloader, class_to_idx = make_dataloader(data_dir)
 #get category-to-label mapping
 cat_to_name = load_labels()
 
-
 ### setup model
 nr_out_features = len(cat_to_name)
-fl_model = setup_model(model_str, hidden_units, p_dropout, nr_out_features, nn.LogSoftmax(dim=1), class_to_idx)
+mp = model_setup_parms()
+mp.model_family, mp.hl_nodes, mp.p_dropout, mp.nr_out_features, mp.out_function, mp.class_to_idx = model_str, hidden_units, p_dropout, nr_out_features, nn.LogSoftmax(dim=1), class_to_idx
+fl_model = setup_model(mp)
+fl_model.parameters = mp
 criterion = nn.NLLLoss()
 optimizer = optim.Adam(fl_model.classifier.parameters(), lr=learning_rate)
+
 if printmodel:
     print(fl_model)
 

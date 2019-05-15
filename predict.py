@@ -37,7 +37,6 @@ def predict2(in_im, model, topk=5):
 model, optimizer, log = load_checkpoint(model, optimizer, f"{save_dir}/{model_str}_last_epoch.pth", device)
 
 ##### needs to be adapted, move to seperate file with functions for label handling?
-
 idx_to_class = {val: key for key, val in fl_model.class_to_idx.items()} #this line adapted from the Udacity Knowledge base
 def idx_to_name (idx):
     fclass=idx_to_class[idx]
