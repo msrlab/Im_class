@@ -1,3 +1,5 @@
+print("importing libraries...")
+import os
 import torch
 from torchvision import datasets, transforms, models
 from torch import nn
@@ -6,58 +8,108 @@ import torch.nn.functional as F
 from collections import OrderedDict
 import time
 import json
-
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as pypl
-
 import msr_helper as helper
-
 from workspace_utils import active_session
-
 from PIL import Image
 import numpy as np
 from IPython.display import display
-
 from model_helper import construct_nn_Seq, setup_model, save_checkpoint, load_checkpoint, train_logger, calc_val_metrics, print_loss_metrics, train
 from proc_helper import process_image
+import argparse
 
-#select the model including parameters
-def select_model(select_model):
-    nr_out_features = len(cat_to_name)
-    if select_model == 'densenet121_a':
-        fl_model = setup_model('densenet121', [1024, 512, 256, 256], [0.2, 0.2, 0.2, 0.2], nr_out_features, nn.LogSoftmax(dim=1), class_to_idx)
-        criterion = nn.NLLLoss()
-        optimizer = optim.Adam(fl_model.classifier.parameters(), lr=0.0001)
-    if select_model == 'densenet121_test':
-        fl_model = setup_model('densenet121', [512, 256], [0.2, 0.2], nr_out_features, nn.LogSoftmax(dim=1), class_to_idx)
-        criterion = nn.NLLLoss()
-        optimizer = optim.Adam(fl_model.classifier.parameters(), lr=0.0001)
+# parameters and settings for training
 
-    if select_model == 'densenet121_b':
-        fl_model = setup_model('densenet121', [512, 256], [0.5, 0.5], nr_out_features, nn.LogSoftmax(dim=1), class_to_idx)
-        criterion = nn.NLLLoss()
-        optimizer = optim.Adam(fl_model.classifier.parameters(), lr=0.0001)   
+#defaults for command line arguments
+def_epochs = 30
+def_save_dir = '.'
+def_hidden_units = [512]
+def_dropout = [0.2]
+def_learning_rate = 0.0001
 
-    if select_model == 'vgg19_a':
-        fl_model = setup_model('vgg19', [1600, 1600], [0.5, 0.5], nr_out_features, nn.LogSoftmax(dim=1), class_to_idx)
-        criterion = nn.NLLLoss()
-        optimizer = optim.Adam(fl_model.classifier.parameters(), lr=0.0001) 
+resume = True #True to resume from saved checkpoint !!!caution: if set to False, existing file will be overwritten!
 
-    if select_model == 'vgg16_a':
-        fl_model = setup_model('vgg16', [1600, 1600], [0.5, 0.5], nr_out_features, nn.LogSoftmax(dim=1), class_to_idx)
-        criterion = nn.NLLLoss()
-        optimizer = optim.Adam(fl_model.classifier.parameters(), lr=0.001) 
-        #optimizer = optim.SGD(fl_model.parameters(), lr = 0.005, momentum = 0.5)
-        #optimizer = optim.ASGD( fl_model.classifier.parameters(), lr=0.01, lambd=0.0001, alpha=0.75, t0=1000000.0, weight_decay=0)
+eval_every_x_batch = 1000    #can be used for testing in slow CPU mode, set to high values if not needed
+eval_every_x_epoch = 1
+save_every_x_evalepoch = 1 * eval_every_x_epoch
+model_str = 'densenet121_test'
 
-    return fl_model, criterion, optimizer
-#print(fl_model)
+parser = argparse.ArgumentParser()
+parser.add_argument('data_dir', action='store',
+                    help='directory containing the data. must contain test, valid and train subfolders. these must contain subfolders for each category.')
+parser.add_argument('--save_dir', action='store',
+                    dest='save_dir', default=def_save_dir,
+                    help='directory where checkpoints and other stuff is saved. default is current directory. also used to resume training.')
+parser.add_argument('--arch', action='store',
+                    dest='arch',
+                    help='choose architecture of pretrained network. available options: vgg19, densenet212. take a look at setup_model() to implement more')
+parser.add_argument('--learning_rate', action='store',
+                    dest='learning_rate', default=def_learning_rate,
+                    help='give learning rate for training')
+parser.add_argument('--epochs', action='store', type=int,
+                    dest='epochs', default=def_epochs,
+                    help='how many epochs to be trained')
+parser.add_argument('--hidden_units', nargs ='+', action='store', type=int,
+                    dest='hidden_units', default=def_hidden_units,
+                    help='number of hidden units per layer. can be multiple arguments, each additional number adds a fully connected layer to the classifier')
+parser.add_argument('--dropout', nargs ='+', action='store', type=float,
+                    dest='dropout', default=def_dropout,
+                    help='dropout used during training. can be given as single number or per layer')
 
+parser.add_argument('--gpu', action='store_true',
+                    default=False,
+                    dest='set_gpu',
+                    help='switch to set gpu mode explicitely. default is autodetect')
+parser.add_argument('--cpu', action='store_true',
+                    default=False,
+                    dest='set_cpu',
+                    help='switch to set cpu mode explicitely. default is autodetect')
+parser.add_argument('--noresume', action='store_true',
+                    default=False,
+                    dest='noresume',
+                    help='default behavior is to resume training from saved checkpoint in <save_dir>. this switch will override resuming and overwrite any saved checkpoint')
+parser.add_argument('--printmodel', action='store_true',
+                    default=False,
+                    dest='printmodel',
+                    help='for debugging: print model architecture to console')
 
+args = parser.parse_args()
+data_dir = args.data_dir
+save_dir = args.save_dir
+epochs = args.epochs
+model_str = args.arch
+hidden_units = args.hidden_units
+dropout = args.dropout
+learning_rate = args.learning_rate
+printmodel = args.printmodel
+set_cpu = args.set_cpu
+set_gpu = args.set_gpu
+
+## if only one dropout value but multiple layers in hidden_units, construct p_dropout list with same value
+if (len(dropout) == 1):
+    p_dropout = [dropout[0] for i in range(len(hidden_units))]
+else:
+    p_dropout = dropout
+## makedirectory if not exist
+try:
+    os.mkdir(save_dir)
+except FileExistsError:
+    pass
+## set gpu/cpu mode
+if set_gpu:
+    device = torch.device('cuda:0')
+    print("Device manually set to cuda")
+elif set_cpu:
+    device = torch.device('cpu')
+    print("Device manually set to cpu")
+else:  #autodetect
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    print(f"device autodetected as {device.type}")
 
 ###### load the data
-data_dir = 'flowers'
+#data_dir = 'flowers'
 train_dir = data_dir + '/train'
 valid_dir = data_dir + '/valid'
 test_dir = data_dir + '/test'
@@ -89,6 +141,7 @@ data_transforms = {
 data_transforms['valid'] = data_transforms['train']
 
 # Load the datasets with ImageFolder
+print(f"loading the dataset from folder '{data_dir}' ...")
 dsets = ['train','valid','test']
 image_dataset = {x: datasets.ImageFolder(data_dir + '/' + x, data_transforms[x])
                      for x in dsets}
@@ -113,24 +166,28 @@ with open('cat_to_name.json', 'r') as f:
     cat_to_name = json.load(f)
 len(cat_to_name)
 
+### setup model
+nr_out_features = len(cat_to_name)
+fl_model = setup_model(model_str, hidden_units, p_dropout, nr_out_features, nn.LogSoftmax(dim=1), class_to_idx)
+criterion = nn.NLLLoss()
+optimizer = optim.Adam(fl_model.classifier.parameters(), lr=learning_rate)
+if printmodel:
+    print(fl_model)
 
-#########  do the training
 
-model_str = 'densenet121_test'
-fl_model, criterion, optimizer = select_model(model_str)
+        #optimizer = optim.SGD(fl_model.parameters(), lr = 0.005, momentum = 0.5)
+        #optimizer = optim.ASGD( fl_model.classifier.parameters(), lr=0.01, lambd=0.0001, alpha=0.75, t0=1000000.0, weight_decay=0)
+
+#print(fl_model)
+
+
+
+
 ####train the selected model
-# parameters and settings for training
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-#device = 'cpu'  #or set manually to 'cpu' or 'cuda'
 fl_model.to(device)
-resume = True #True to resume from saved checkpoint !!!caution: if set to False, existing file will be overwritten!
-epochs = 30
-eval_every_x_batch = 1000    #can be used for testing in slow CPU mode, set to high values if not needed
-eval_every_x_epoch = 1
-save_every_x_evalepoch = 1 * eval_every_x_epoch
 
 with active_session():
-    log = train(dataloader, model_str, device, fl_model, optimizer, criterion, epochs, eval_every_x_batch, eval_every_x_epoch, save_every_x_evalepoch, resume)
+    log = train(dataloader, model_str, device, fl_model, optimizer, criterion, epochs, eval_every_x_batch, eval_every_x_epoch, save_every_x_evalepoch, resume, save_dir)
 print(f"finished training on {epochs} epochs.")
 print("calculating performance on test set...")
 fl_model.eval()
@@ -152,4 +209,4 @@ print(f"Accuracy:{test_accuracy:.3f}")
 pypl.plot(log.val_loss, label='Validation Loss')
 pypl.plot(log.train_loss, label='Train Loss')
 pypl.legend()
-pypl.savefig('Loss')
+pypl.savefig(save_dir+'/Loss')

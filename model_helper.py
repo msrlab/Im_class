@@ -1,4 +1,5 @@
 # functions to setup the model
+import os
 import torch
 from torchvision import datasets, transforms, models
 from torch import nn
@@ -121,7 +122,7 @@ def print_loss_metrics(epoch, epochs, batch, val_accuracy, val_loss, train_loss,
           f"time {time:.3f} | ")
 
     
-def train(dataloader, model_str, device, model, optimizer, criterion, epochs, eval_every_x_batch, eval_every_x_epoch, save_every_x_evalepoch, resume):    
+def train(dataloader, model_str, device, model, optimizer, criterion, epochs, eval_every_x_batch, eval_every_x_epoch, save_every_x_evalepoch, resume, save_dir):    
     # initialize
     print("Starting training...")
     if device.type == 'cpu':
@@ -133,15 +134,19 @@ def train(dataloader, model_str, device, model, optimizer, criterion, epochs, ev
     resume_epoch = 0
 
     #load checkpoint to continue training
-    if resume:
-        model, optimizer, log = load_checkpoint(model, optimizer, f"{model_str}_last_epoch.pth", device)
+    if os.path.isfile(f"{save_dir}/{model_str}_last_epoch.pth"):
+        model, optimizer, log = load_checkpoint(model, optimizer, f"{save_dir}/{model_str}_last_epoch.pth", device)
         resume_epoch = log.epoch
-        print(f"Resuming from saved checkpoint")
+        print(f"Checkpoint detected: Resuming from {save_dir}/{model_str}_last_epoch.pth")
         print_loss_metrics(log.epoch, epochs, 0, log.val_acc[log.epoch - 1], log.val_loss[log.epoch - 1], log.train_loss[log.epoch - 1], 0)
         if resume_epoch == epochs:
             print(f"training on {epochs} epochs is already finished, increase nr of epochs if you want to continue training")
+        elif resume_epoch > epochs:
+            print(f"more than {epochs} already trained, increase nr of epochs if you want to continue training")
         else:
             print("Continuing...")
+    else:
+        print("no checkpoint detected, starting from scratch....")
     for epoch in range(resume_epoch, epochs):
         start_time_e = time.time()
         loss_running = 0
@@ -173,7 +178,7 @@ def train(dataloader, model_str, device, model, optimizer, criterion, epochs, ev
             log.epoch = epoch + 1
             print_loss_metrics(epoch+1, epochs, ii+1, val_accuracy, val_loss, loss_running/(ii+1), epoch_time)
             if (epoch+1) % save_every_x_evalepoch == 0: #save checkpoint for later resuming
-                save_checkpoint(model, optimizer, f"{model_str}_last_epoch.pth", log)           
+                save_checkpoint(model, optimizer, f"{save_dir}/{model_str}_last_epoch.pth", log)           
                 #later implement additional saving of model with lowest loss  f"{model_str}_epoch{epoch+1:03d}.pth"
     return log
     # Tracking the loss and accuracy on the validation set to determine the best hyperparameters
