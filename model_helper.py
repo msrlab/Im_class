@@ -43,22 +43,18 @@ def setup_model(mp):
         nr_in_features = model.classifier[0].in_features
     if mp.model_family == 'densenet121':  
         model = models.densenet121(pretrained=True)
-        nr_in_features = model.classifier.in_features
-        
+        nr_in_features = model.classifier.in_features       
     # attach labels to model
     model.class_to_idx = mp.class_to_idx
     idx_to_class = {val: key for key, val in model.class_to_idx.items()}
     model.idx_to_class = idx_to_class
     #freeze parameters
     for param in model.parameters():
-        param.requires_grad = False  
-        
+        param.requires_grad = False          
     #setup layers in classifier and add to model
     classifier = construct_nn_Seq (nr_in_features, mp.hl_nodes, mp.nr_out_features, mp.out_function, mp.p_dropout)    
     model.classifier = classifier
-
     return model
-
 
 ####### functions and classes for logging, saving and loading
 def save_checkpoint(model, optimizer, filename, train_logger):
@@ -74,10 +70,7 @@ def load_checkpoint(model, optimizer, filename, device):
     else:
         checkpoint = torch.load(filename)
     model.load_state_dict(checkpoint['model_state_dict'])
-    try: 
-        model.parameters =  checkpoint['mp']
-    except:
-        pass
+    model.mp =  checkpoint['mp']
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     train_log = checkpoint['train_log']
     return model, optimizer, train_log  
