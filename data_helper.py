@@ -1,6 +1,13 @@
 import torch
 import json
 from torchvision import transforms, datasets
+import matplotlib.pyplot as pypl
+
+def plot_loss(val_loss, train_loss, save_dir, model_str):
+    pypl.plot(val_loss, label='Validation Loss')
+    pypl.plot(train_loss, label='Train Loss')
+    pypl.legend()
+    pypl.savefig(save_dir+'/Loss'+model_str)
 
 def make_dataloader(data_dir):
     train_dir = data_dir + '/train'

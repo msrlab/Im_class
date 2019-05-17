@@ -1,25 +1,15 @@
 print("importing libraries...")
-import os
-import torch
-from torchvision import datasets, transforms, models
-from torch import nn
-from torch import optim
-import torch.nn.functional as F
-from collections import OrderedDict
-import time
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as pypl
-import msr_helper as helper
+import os
+import torch
+from torchvision import models
+from torch import nn
+from torch import optim
 from workspace_utils import active_session
-import numpy as np
-from IPython.display import display
-from model_helper import construct_nn_Seq, setup_model, save_checkpoint, load_checkpoint, train_logger, calc_val_metrics, print_loss_metrics, train, model_setup_parms
-from image_helper import process_image
-from data_helper import load_labels, make_dataloader 
+from model_helper import construct_nn_Seq, setup_model, calc_val_metrics, train, model_setup_parms
+from data_helper import make_dataloader, plot_loss 
 import argparse
-
-# parameters and settings for training
 
 #defaults for command line arguments
 def_epochs = 30
@@ -28,13 +18,9 @@ def_hidden_units = [512, 256]
 def_dropout = [0.2]
 def_learning_rate = 0.0001
 def_arch = 'densenet121'
-
-#resume = True #True to resume from saved checkpoint !!!caution: if set to False, existing file will be overwritten!
-
-eval_every_x_batch = 1000    #can be used for testing in slow CPU mode, set to high values if not needed
-eval_every_x_epoch = 1
-save_every_x_evalepoch = 1 * eval_every_x_epoch
-model_str = 'densenet121_test'
+# settings
+eval_every_x_epoch = 1   #useful to set to higher numpers if many epochs are needed for training and calculation of validaiton accuacy takes a long time
+save_every_x_evalepoch = 1 * eval_every_x_epoch   
 
 parser = argparse.ArgumentParser()
 parser.add_argument('data_dir', action='store',
@@ -57,7 +43,6 @@ parser.add_argument('--hidden_units', nargs ='+', action='store', type=int,
 parser.add_argument('--dropout', nargs ='+', action='store', type=float,
                     dest='dropout', default=def_dropout,
                     help='dropout used during training. can be given as single number or per layer')
-
 parser.add_argument('--gpu', action='store_true',
                     default=False,
                     dest='set_gpu',
@@ -69,7 +54,7 @@ parser.add_argument('--cpu', action='store_true',
 parser.add_argument('--noresume', action='store_true',
                     default=False,
                     dest='noresume',
-                    help='default behavior is to resume training from saved checkpoint in <save_dir>. this switch will override resuming and overwrite any saved checkpoint')
+                    help='default behavior is to resume training from saved checkpoint in <save_dir>. this switch will override resuming and overwrite any saved checkpoint. Caution, resuming assumes that the same model is given!')
 parser.add_argument('--printmodel', action='store_true',
                     default=False,
                     dest='printmodel',
@@ -93,11 +78,13 @@ if (len(dropout) == 1):
     p_dropout = [dropout[0] for i in range(len(hidden_units))]
 else:
     p_dropout = dropout
-## makedirectory if not exist
+    
+## make save_dir directory if not exist
 try:
     os.mkdir(save_dir)
 except FileExistsError:
     pass
+
 ## set gpu/cpu mode
 if set_gpu:
     device = torch.device('cuda:0')
@@ -110,55 +97,30 @@ else:  #autodetect
     print(f"device autodetected as {device.type}")
     
 #construct dataloader
-dataloader, class_to_idx = make_dataloader(data_dir)    
-# todo find different solution using number directly from class_to_idx
-cat_to_name = load_labels('cat_to_name.json')
+dataloader, class_to_idx = make_dataloader(data_dir)
 
 ### setup model
-nr_out_features = len(cat_to_name)
+nr_out_features = len(class_to_idx)
 mp = model_setup_parms()
 mp.model_family, mp.hl_nodes, mp.p_dropout, mp.nr_out_features, mp.out_function, mp.class_to_idx = model_str, hidden_units, p_dropout, nr_out_features, nn.LogSoftmax(dim=1), class_to_idx
 fl_model = setup_model(mp)
-fl_model.parameters = mp
+fl_model.mp = mp  #needs to be attached to model for saving into checkpoint and do a complete model reconstruction when loading a checkpoint
 criterion = nn.NLLLoss()
 optimizer = optim.Adam(fl_model.classifier.parameters(), lr=learning_rate)
-
 if printmodel:
     print(fl_model)
 
-
-        #optimizer = optim.SGD(fl_model.parameters(), lr = 0.005, momentum = 0.5)
-        #optimizer = optim.ASGD( fl_model.classifier.parameters(), lr=0.01, lambd=0.0001, alpha=0.75, t0=1000000.0, weight_decay=0)
-
-#print(fl_model)
-
-
-
-
 ####train the selected model
 fl_model.to(device)
-
 with active_session():
-    log = train(dataloader, model_str, device, fl_model, optimizer, criterion, epochs, eval_every_x_batch, eval_every_x_epoch, save_every_x_evalepoch, resume, save_dir)
+    log = train(dataloader, model_str, device, fl_model, optimizer, criterion, epochs, eval_every_x_epoch, save_every_x_evalepoch, resume, save_dir)
 print(f"finished training on {epochs} epochs.")
+## some output information
+plot_loss(log.val_loss, log.train_loss, save_dir, model_str)
+print(f"see {save_dir}/Loss_{model_str}.png for visualization of training and validation loss by epoch")       
 print("calculating performance on test set...")
 fl_model.eval()
 val_time, test_loss, test_accuracy = calc_val_metrics (device, fl_model, dataloader['test'], criterion)
-print(f"Accuracy:{test_accuracy:.3f}")
-    
-  ######### ToDo make dependent on command line or certain state  
-#just load the last checkpoint of training
-#modelstr = 'vgg19_a'
-#device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-#fl_model, criterion, optimizer = select_model(modelstr)
-#fl_model, optimizer, train_log = load_checkpoint(fl_model, optimizer, modelstr+'_last_epoch.pth')
-#fl_model = fl_model.to(device)
-
-
-######## ToDO transform into a function 
-#%matplotlib inline
-#%config InlineBackend.figure_format = 'retina'
-pypl.plot(log.val_loss, label='Validation Loss')
-pypl.plot(log.train_loss, label='Train Loss')
-pypl.legend()
-pypl.savefig(save_dir+'/Loss'+model_str)
+print(f"test accuracy:{test_accuracy:.3f}")
+best_epoch = log.val_acc.index(max(log.val_acc))+1
+print(f"best validation accuracy of {max(log.val_acc):0.3f} at epoch {best_epoch} (checkpoint:'{save_dir}/{model_str}_best.pth'), checkout test accuracy for this model (checkout.py)") 

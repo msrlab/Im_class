@@ -1,10 +1,9 @@
 # functions to setup the model
 import os
 import torch
-from torchvision import datasets, transforms, models
+from torchvision import models
 from torch import nn
 from torch import optim
-import torch.nn.functional as F
 from collections import OrderedDict
 import time
 #import json
@@ -66,7 +65,7 @@ def save_checkpoint(model, optimizer, filename, train_logger):
     checkpoint = {'model_state_dict': model.state_dict(),
                  'optimizer_state_dict': optimizer.state_dict(),
                  'train_log': train_logger,
-                 'parameters': model.parameters}
+                 'mp': model.mp}
     torch.save(checkpoint, filename)
     
 def load_checkpoint(model, optimizer, filename, device):
@@ -76,7 +75,7 @@ def load_checkpoint(model, optimizer, filename, device):
         checkpoint = torch.load(filename)
     model.load_state_dict(checkpoint['model_state_dict'])
     try: 
-        model.parameters =  checkpoint['parameters']
+        model.parameters =  checkpoint['mp']
     except:
         pass
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -89,10 +88,10 @@ def load_checkpoint_reconstruct(filename, device):
         checkpoint = torch.load(filename, map_location='cpu')
     else:
         checkpoint = torch.load(filename)
-    mp = checkpoint['parameters']    
+    mp = checkpoint['mp']    
     model = setup_model(mp)
     model.load_state_dict(checkpoint['model_state_dict'])
-    model.parameters = mp
+    model.mp = mp
     #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     train_log = checkpoint['train_log']
     #return model, optimizer, train_log  
@@ -154,7 +153,7 @@ def print_loss_metrics(epoch, epochs, batch, val_accuracy, val_loss, train_loss,
           f"time {time:.3f} | ")
 
     
-def train(dataloader, model_str, device, model, optimizer, criterion, epochs, eval_every_x_batch, eval_every_x_epoch, save_every_x_evalepoch, resume, save_dir):    
+def train(dataloader, model_str, device, model, optimizer, criterion, epochs, eval_every_x_epoch, save_every_x_evalepoch, resume, save_dir):    
     # initialize
     print("Starting training...")
     if device.type == 'cpu':
@@ -177,7 +176,7 @@ def train(dataloader, model_str, device, model, optimizer, criterion, epochs, ev
             if resume_epoch == epochs:
                 print(f"training on {epochs} epochs is already finished, increase nr of epochs if you want to continue training")
             elif resume_epoch > epochs:
-                print(f"more than {epochs} already trained, increase nr of epochs if you want to continue training")
+                print(f"more than {epochs} epoch already trained, increase nr of epochs if you want to continue training")
             else:
                 print("Continuing...")
     else:
@@ -198,18 +197,12 @@ def train(dataloader, model_str, device, model, optimizer, criterion, epochs, ev
             loss.backward()
             optimizer.step()
             batch_time = time.time()-start_time
-            #print(f"Batch {ii} batch_time:{batch_time:.3f}s "
-            #      f"train loss {loss:.3f}")
-            if (ii+1) % eval_every_x_batch == 0:
-                val_time, val_loss, val_accuracy = calc_val_metrics(device, model, dataloader['valid'], criterion)
-                log.val_acc.append(val_accuracy)
-                log.val_loss.append(val_loss)
-                log.train_loss.append(loss_running/(ii+1))
-                log.epoch = epoch + 1
-                print_loss_metrics(epoch, epochs, ii+1, val_accuracy, val_loss, loss_running/(ii+1))
         if (epoch+1) % eval_every_x_epoch == 0:  #check validation set and print metrics
             epoch_time = time.time() - start_time_e 
             val_time, val_loss, val_accuracy = calc_val_metrics(device, model, dataloader['valid'], criterion)
+            if epoch > 0:
+                if val_accuracy > max(log.val_acc): #save checkpoint if val_accuracy is best so far
+                    save_checkpoint(model, optimizer, f"{save_dir}/{model_str}_best.pth", log)
             log.val_acc.append(val_accuracy)
             log.val_loss.append(val_loss)
             log.train_loss.append(loss_running/(ii+1))
@@ -221,4 +214,14 @@ def train(dataloader, model_str, device, model, optimizer, criterion, epochs, ev
     return log
     # Tracking the loss and accuracy on the validation set to determine the best hyperparameters
     
-    
+def predict_im(in_im, model, device, topk=5):
+    # Predict the class (or classes) of an input
+    model.eval()
+    inputs = torch.Tensor(1,3,224,224)
+    inputs = inputs.to(device)
+    inputs[0] = in_im
+    output = model.forward(inputs)
+    prob = torch.exp(output)
+    top_prob, top_class = torch.topk(prob, topk) 
+    return top_prob.cpu().detach().numpy()[0], top_class.cpu().detach().numpy()[0]
+   
