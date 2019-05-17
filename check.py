@@ -70,7 +70,7 @@ np.set_printoptions(precision = 3)
 for dset in dsets:   
     images, labels = next(dataiter[dset])
     if dset in acc_dsets:
-        print(f"calculating performance on {dset} set...")
+        print(f"calculating overall performance on {dset} set...")
         val_time, test_loss, test_accuracy = calc_val_metrics (device, fl_model, dataloader[dset], criterion)
         print(f"accuracy:{test_accuracy:.3f}")
     print(f"checking true label against prediction for {dset} set")

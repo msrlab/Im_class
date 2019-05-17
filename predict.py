@@ -33,7 +33,7 @@ parser.add_argument('--top_k', action='store', type=int,
                     help='output of top k classes')
 parser.add_argument('--category_names', action='store', 
                     dest='category_names', default='cat_to_name.json',
-                    help='json dictionary to translate classes/categories to names')
+                    help='file containing json dictionary to translate classes/categories to names')
 
 parser.add_argument('--gpu', action='store_true',
                     default=False,
@@ -50,7 +50,7 @@ parser.add_argument('--printmodel', action='store_true',
 parser.add_argument('--png_print', action='store_true',
                     default=False,
                     dest='png_print',
-                    help='print a nice prediction graphic ot predict.png')
+                    help='print a nice prediction graphic to predict.png')
 
 args = parser.parse_args()
 cat_names_file = args.category_names
